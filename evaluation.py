@@ -1,7 +1,8 @@
+
 import chess
 
-
-piece_values = {
+# Material values in centipawns
+PIECE_VALUES = {
     chess.PAWN: 100,
     chess.KNIGHT: 320,
     chess.BISHOP: 330,
@@ -10,17 +11,94 @@ piece_values = {
     chess.KING: 0
 }
 
+# Piece-Square Tables
+# Rows are ordered from White's first rank (rank 1)
+# to White's eighth rank (rank 8).
+# Higher values reward more desirable positions.
+
+PAWN_TABLE = [
+    0,   0,   0,   0,   0,   0,   0,   0,
+    50,  50,  50,  50,  50,  50,  50,  50,
+    10,  10,  20,  30,  30,  20,  10,  10,
+     5,   5,  10,  25,  25,  10,   5,   5,
+     0,   0,   0,  20,  20,   0,   0,   0,
+     5,  -5, -10,   0,   0, -10,  -5,   5,
+     5,  10,  10, -20, -20,  10,  10,   5,
+     0,   0,   0,   0,   0,   0,   0,   0
+]
+
+KNIGHT_TABLE = [
+    -50, -40, -30, -30, -30, -30, -40, -50,
+    -40, -20,   0,   5,   5,   0, -20, -40,
+    -30,   5,  10,  15,  15,  10,   5, -30,
+    -30,   0,  15,  20,  20,  15,   0, -30,
+    -30,   5,  15,  20,  20,  15,   5, -30,
+    -30,   0,  10,  15,  15,  10,   0, -30,
+    -40, -20,   0,   0,   0,   0, -20, -40,
+    -50, -40, -30, -30, -30, -30, -40, -50
+]
+
+BISHOP_TABLE = [
+    -20, -10, -10, -10, -10, -10, -10, -20,
+    -10,   5,   0,   0,   0,   0,   5, -10,
+    -10,  10,  10,  10,  10,  10,  10, -10,
+    -10,   0,  10,  10,  10,  10,   0, -10,
+    -10,   5,   5,  10,  10,   5,   5, -10,
+    -10,   0,   5,  10,  10,   5,   0, -10,
+    -10,   5,   0,   0,   0,   0,   5, -10,
+    -20, -10, -10, -10, -10, -10, -10, -20
+]
+
+ROOK_TABLE = [
+     0,   0,   0,   5,   5,   0,   0,   0,
+     5,  10,  10,  10,  10,  10,  10,   5,
+    -5,   0,   0,   0,   0,   0,   0,  -5,
+    -5,   0,   0,   0,   0,   0,   0,  -5,
+    -5,   0,   0,   0,   0,   0,   0,  -5,
+    -5,   0,   0,   0,   0,   0,   0,  -5,
+    -5,   0,   0,   0,   0,   0,   0,  -5,
+     0,   0,   0,   5,   5,   0,   0,   0
+]
+
+QUEEN_TABLE = [
+    -20, -10, -10,  -5,  -5, -10, -10, -20,
+    -10,   0,   5,   0,   0,   0,   0, -10,
+    -10,   5,   5,   5,   5,   5,   0, -10,
+      0,   0,   5,   5,   5,   5,   0,  -5,
+     -5,   0,   5,   5,   5,   5,   0,  -5,
+    -10,   0,   5,   5,   5,   5,   0, -10,
+    -10,   0,   0,   0,   0,   0,   0, -10,
+    -20, -10, -10,  -5,  -5, -10, -10, -20
+]
+
+# King table for the middlegame:
+# encourages the king to remain relatively safe.
+KING_TABLE = [
+    -30, -40, -40, -50, -50, -40, -40, -30,
+    -30, -40, -40, -50, -50, -40, -40, -30,
+    -30, -40, -40, -50, -50, -40, -40, -30,
+    -30, -40, -40, -50, -50, -40, -40, -30,
+    -20, -30, -30, -40, -40, -30, -30, -20,
+    -10, -20, -20, -20, -20, -20, -20, -10,
+     20,  20,   0,   0,   0,   0,  20,  20,
+     20,  30,  10,   0,   0,  10,  30,  20
+]
+
+PIECE_TABLES = {
+    chess.PAWN: PAWN_TABLE,
+    chess.KNIGHT: KNIGHT_TABLE,
+    chess.BISHOP: BISHOP_TABLE,
+    chess.ROOK: ROOK_TABLE,
+    chess.QUEEN: QUEEN_TABLE,
+    chess.KING: KING_TABLE
+}
+
 
 def evaluate(board):
 
     # Checkmate
     if board.is_checkmate():
-
-        # board.turn is the player who is checkmated
-        if board.turn == chess.WHITE:
-            return -100000
-        else:
-            return 100000
+        return -100000 if board.turn == chess.WHITE else 100000
 
     # Draw conditions
     if (
@@ -31,27 +109,30 @@ def evaluate(board):
 
     score = 0
 
-    # Material evaluation
-    for piece_type, value in piece_values.items():
+    # Material + positional evaluation
+    for square, piece in board.piece_map().items():
 
-        white_count = len(
-            board.pieces(piece_type, chess.WHITE)
+        piece_type = piece.piece_type
+        value = PIECE_VALUES[piece_type]
+
+        # Tables are defined from White's perspective.
+        # Flip the rank for Black to mirror the position.
+        table_square = (
+            square if piece.color == chess.WHITE
+            else chess.square_mirror(square)
         )
 
-        black_count = len(
-            board.pieces(piece_type, chess.BLACK)
-        )
+        positional_bonus = PIECE_TABLES[piece_type][table_square]
 
-        score += white_count * value
-        score -= black_count * value
+        piece_score = value + positional_bonus
 
-    # Center bonus
-    center_squares = [
-        chess.D4,
-        chess.E4,
-        chess.D5,
-        chess.E5
-    ]
+        if piece.color == chess.WHITE:
+            score += piece_score
+        else:
+            score -= piece_score
+
+    # Additional center-control bonus
+    center_squares = [chess.D4, chess.E4, chess.D5, chess.E5]
 
     for square in center_squares:
         piece = board.piece_at(square)
