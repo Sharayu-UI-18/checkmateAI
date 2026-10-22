@@ -1,11 +1,13 @@
 import streamlit as st
 import chess
+import time
 
 from evaluation import evaluate
 from algorithms.minimax import choose_move as minimax
 from algorithms.alpha_beta import choose_move as alpha_beta
 from algorithms.alpha_beta_ordered import choose_move as ordered
 from algorithms.iterative_deepening import choose_move as iterative_deepening
+from algorithms.mcts import choose_move as mcts
 st.set_page_config(
     page_title="CheckmateAI — Chess Engine",
     page_icon="♟️",
@@ -20,6 +22,7 @@ ALGORITHMS = {
     "Alpha-Beta Pruning": alpha_beta,
     "Alpha-Beta + Move Ordering": ordered,
     "Alpha-Beta + Iterative Deepening": iterative_deepening,
+    "Monte Carlo Tree Search (MCTS)": mcts,
 }
 
 PIECES = {
@@ -59,7 +62,10 @@ with st.sidebar:
     st.caption("Search algorithm comparison")
     algorithm = st.selectbox("Algorithm", list(ALGORITHMS.keys()))
     depth = st.slider("Search depth (plies)", min_value=1, max_value=4, value=3)
-    st.caption("Higher depth can take significantly longer.")
+    if "MCTS" in algorithm:
+        st.caption(f"MCTS budget: {depth * 100} simulations.")
+    else:
+        st.caption("Higher depth can take significantly longer.")
     if st.button("↻  New game", use_container_width=True):
         st.session_state.board = chess.Board()
         st.session_state.selected = None
@@ -67,7 +73,9 @@ with st.sidebar:
         st.session_state.notice = "New game started. White moves first."
         st.rerun()
     st.divider()
-    st.caption("You play White. The selected algorithm plays Black.")
+    auto_bot = st.checkbox("Auto bot move", value=True, help="Bot automatically plays its move after you play.")
+    self_play = st.checkbox("Self-play (Bot vs Bot)", value=False, help="Bot plays both White and Black automatically.")
+    st.caption("You play White by default. The selected algorithm plays Black.")
 
 board = st.session_state.board
 selected = st.session_state.selected
@@ -187,7 +195,27 @@ with info_col:
     )
     st.info(st.session_state.notice)
 
-    if board.turn == chess.BLACK and not game_over:
+    should_bot_move = False
+    if not game_over:
+        if self_play:
+            should_bot_move = True
+        elif board.turn == chess.BLACK and auto_bot:
+            should_bot_move = True
+
+    if should_bot_move:
+        with st.spinner(f"{algorithm} is thinking..."):
+            if self_play:
+                import time; time.sleep(0.3)
+            move, score, stats = ALGORITHMS[algorithm](board, depth)
+        if move is not None:
+            side = "White" if board.turn == chess.WHITE else "Black"
+            board.push(move)
+            st.session_state.notice = f"Bot ({side}) played {move.uci()}." if self_play else f"Bot played {move.uci()}."
+            st.session_state.stats = stats
+        else:
+            st.session_state.notice = "The engine did not return a move."
+        st.rerun()
+    elif board.turn == chess.BLACK and not game_over:
         if st.button("🤖  Make bot move", type="primary", use_container_width=True):
             with st.spinner(f"{algorithm} is searching..."):
                 move, score, stats = ALGORITHMS[algorithm](board, depth)
@@ -205,7 +233,10 @@ with info_col:
         with a:
             st.metric("Nodes searched", f"{stats['nodes']:,}")
         with b:
-            st.metric("Alpha-Beta cutoffs", f"{stats['cutoffs']:,}")
+            if "simulations" in stats:
+                st.metric("Simulations", f"{stats['simulations']:,}")
+            else:
+                st.metric("Alpha-Beta cutoffs", f"{stats['cutoffs']:,}")
         st.metric("Search time", f"{stats['seconds']:.4f} s")
         if stats["seconds"] > 0:
             st.metric("Nodes per second", f"{stats['nodes'] / stats['seconds']:,.0f}")
